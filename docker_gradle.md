@@ -1,0 +1,1 @@
+sudo podman run --rm -v "arr:/home/gradle/project -w /home/gradle/project /home/gradle/project/gradlew build

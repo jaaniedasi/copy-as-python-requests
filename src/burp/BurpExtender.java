@@ -60,9 +60,7 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, Clipboa
 	private enum BodyType {JSON, DATA};
 
 	private void copyMessages(IHttpRequestResponse[] messages, boolean withSessionObject) {
-		StringBuilder py = new StringBuilder("import requests");
-		String requestsMethodPrefix =
-			"\n" + (withSessionObject ? SESSION_VAR : "requests") + ".";
+		StringBuilder py = new StringBuilder();
 		int i = 0;
 
 		if (withSessionObject) {
@@ -72,26 +70,39 @@ public class BurpExtender implements IBurpExtender, IContextMenuFactory, Clipboa
 		for (IHttpRequestResponse message : messages) {
 			IRequestInfo ri = helpers.analyzeRequest(message);
 			byte[] req = message.getRequest();
-			String prefix = "burp" + i++ + "_";
-			py.append("\n\n").append(prefix).append("url = \"");
-			py.append(escapeQuotes(ri.getUrl().toString()));
+			String prefix = "    burp" + i++ + "_";
+			// the host
+			py.append(prefix).append("host = \"");
+			py.append(escapeQuotes(ri.getUrl().getHost().toString()));
 			py.append('"');
+			// the headers and cookies
 			List<String> headers = ri.getHeaders();
 			boolean cookiesExist = processCookies(prefix, py, headers);
 			py.append('\n').append(prefix).append("headers = {");
 			processHeaders(py, headers);
 			py.append('}');
+			// the path
+			py.append('\n').append(prefix).append("path = \"");
+			py.append(escapeQuotes(ri.getUrl().getPath().toString()));
+			py.append('"');
+			// the bodytype
 			BodyType bodyType = processBody(prefix, py, req, ri);
-			py.append(requestsMethodPrefix);
-			py.append(ri.getMethod().toLowerCase());
-			py.append('(').append(prefix).append("url, headers=");
-			py.append(prefix).append("headers");
-			if (cookiesExist) py.append(", cookies=").append(prefix).append("cookies");
 			if (bodyType != null) {
-				String kind = bodyType.toString().toLowerCase();
-				py.append(", ").append(kind).append('=').append(prefix).append(kind);
+				py.append('\n').append(prefix).append("bodytype = \"");
+				py.append(bodyType == BodyType.JSON ? "json" : "data");
+				py.append('"');
+			} else {
+				py.append('\n').append(prefix).append("bodytype = None");
+				py.append('\n').append(prefix).append("body = None");
 			}
-			py.append(')');
+			py.append('\n').append(prefix).append("method = \"");
+			py.append(ri.getMethod());
+			py.append('"');
+			py.append('\n').append(prefix).append("port = ");
+			py.append(ri.getUrl().getPort());
+			py.append('\n').append(prefix).append("scheme = \"");
+			py.append(ri.getUrl().getProtocol());
+			py.append('"');
 		}
 
 		Toolkit.getDefaultToolkit().getSystemClipboard()
@@ -161,19 +172,18 @@ header_loop:
 			byte[] req, IRequestInfo ri) {
 		int bo = ri.getBodyOffset();
 		if (bo >= req.length - 2) return null;
-		py.append('\n').append(prefix);
 		byte contentType = ri.getContentType();
 		if (contentType == IRequestInfo.CONTENT_TYPE_JSON) {
 			try {
 				Json root = Json.read(byteSliceToString(req, bo, req.length));
-				py.append("json=");
+				py.append("\n").append(prefix).append("body = ");
 				escapeJson(root, py);
 				return BodyType.JSON;
 			} catch (Exception e) {
 				// not valid JSON, treat it like any other kind of data
 			}
 		}
-		py.append("data = ");
+		py.append("\n").append(prefix).append("body = ");
 		if (contentType == IRequestInfo.CONTENT_TYPE_URL_ENCODED) {
 			py.append('{');
 			boolean firstKey = true;
